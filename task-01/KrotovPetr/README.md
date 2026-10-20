@@ -1,6 +1,6 @@
 # Task 1: Items API
 
-This directory contains the in-memory microservice, two application instances, and Prometheus scraping for Task 1. Grafana dashboard generation and background load are not implemented yet.
+This directory contains the in-memory microservice, two application instances, Prometheus scraping, and a generated Grafana dashboard for Task 1. Background load is not implemented yet.
 
 ## Run
 
@@ -9,7 +9,9 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The first API instance listens on `http://localhost:8080`, the second on `http://localhost:8081`, and Prometheus on `http://localhost:9090`. Change `PORT` or `PORT_2` in `.env` to use other host ports. Both application containers use the same image. Each has its own in-memory storage, which disappears when that container restarts.
+The first API instance listens on `http://localhost:8080`, the second on `http://localhost:8081`, Prometheus on `http://localhost:9090`, and Grafana on `http://localhost:3000`. Change the corresponding port in `.env` if needed. Both application containers use the same image. Each has its own in-memory storage, which disappears when that container restarts.
+
+Grafana uses the admin credentials from `.env`. The value in `.env.example` is a public, local-only example; replace it in `.env` if you expose Grafana outside localhost. Existing `.env` files made before Grafana was added need a `GRAFANA_ADMIN_PASSWORD` entry.
 
 ## Endpoints
 
@@ -38,3 +40,9 @@ An invalid item ID or missing/empty `name` returns 400.
 A Histogram exposes cumulative buckets that can be summed across instances while retaining the `le` boundary, then passed to `histogram_quantile`. A Summary calculates quantiles in each instance; those quantiles cannot be combined into a correct overall percentile.
 
 Prometheus scrapes `app:8080/metrics` and `app-b:8080/metrics` every five seconds. Check target status at `http://localhost:9090/targets`. The `/handlers` response is built from the same route registrations as the API, so registering another working route through `registerHandler` adds it to the list without editing `/handlers`.
+
+## Grafana dashboard
+
+The Prometheus data source is provisioned with the fixed UID `prometheus-main`. After the application and Grafana health checks pass, `dashboard-generator` reads `/handlers` and creates or updates the dashboard with UID `items-api-handlers`. It also makes this dashboard the Grafana organization home page. The dashboard is marked non-editable and has one row of latency, RPS, and errors-by-code panels per working route. Its Datacenter and Pod selectors allow multiple values or All.
+
+The generator obtains the route list at runtime. Adding a route through `registerHandler` and restarting the stack adds its panels without changing the generator. The dashboard uses `sum(rate(...))` for RPS and sums histogram bucket rates by `le` before calculating p50, p95, and p99. Errors show the rolling five-minute count for each 4xx or 5xx code. The generator authenticates to Grafana using the admin credentials passed as environment variables.
