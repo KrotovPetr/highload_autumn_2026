@@ -1,4 +1,5 @@
-import express from "express";
+import express, { type NextFunction, type Request, type Response } from "express";
+import { createRequestMetrics, type InstanceIdentity } from "./metrics";
 
 type Item = {
   id: number;
@@ -23,19 +24,49 @@ function parseItemName(body: unknown): string | null {
   return typeof name === "string" && name.trim().length > 0 ? name.trim() : null;
 }
 
-export function createApp() {
+export function createApp(identity: InstanceIdentity) {
   const app = express();
   const items = new Map<number, Item>();
+  const metrics = createRequestMetrics(identity);
+  const parseJson = express.json();
   let nextId = 1;
 
   app.disable("x-powered-by");
-  app.use(express.json());
+  app.use((request, response, next) => {
+    const startedAt = process.hrtime.bigint();
+
+    response.once("finish", () => {
+      const matchedPath = request.route?.path;
+      if (
+        typeof matchedPath !== "string" ||
+        matchedPath === "/health" ||
+        matchedPath === "/metrics"
+      ) {
+        return;
+      }
+
+      const route = matchedPath.replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, "{$1}");
+      const method = request.method;
+      metrics.requests.inc({ method, route, status_code: String(response.statusCode) });
+      metrics.duration.observe(
+        { method, route },
+        Number(process.hrtime.bigint() - startedAt) / 1e9,
+      );
+    });
+
+    next();
+  });
 
   app.get("/health", (_request, response) => {
     response.status(200).json({ status: "ok" });
   });
 
-  app.post("/items", (request, response) => {
+  app.get("/metrics", async (_request, response) => {
+    response.setHeader("Content-Type", metrics.registry.contentType);
+    response.send(await metrics.registry.metrics());
+  });
+
+  app.post("/items", parseJson, (request, response) => {
     const name = parseItemName(request.body);
     if (name === null) {
       response.status(400).json({ error: "name must be a non-empty string" });
@@ -63,7 +94,7 @@ export function createApp() {
     response.json(item);
   });
 
-  app.put("/items/:id", (request, response) => {
+  app.put("/items/:id", parseJson, (request, response) => {
     const id = parseItemId(request.params.id);
     if (id === null) {
       response.status(400).json({ error: "id must be a positive integer" });
@@ -84,6 +115,20 @@ export function createApp() {
     const item: Item = { id, name };
     items.set(id, item);
     response.json(item);
+  });
+
+  app.use((error: unknown, _request: Request, response: Response, next: NextFunction) => {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "type" in error &&
+      error.type === "entity.parse.failed"
+    ) {
+      response.status(400).json({ error: "invalid JSON" });
+      return;
+    }
+
+    next(error);
   });
 
   return app;

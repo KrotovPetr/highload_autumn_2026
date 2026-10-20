@@ -3,6 +3,8 @@ services:
     build: .
     environment:
       PORT: "8080"
+      POD_ID: ${POD_ID:-pod-1}
+      DATACENTER: ${DATACENTER:-dc-a}
     ports:
       - "${PORT:-8080}:8080"
     healthcheck:
