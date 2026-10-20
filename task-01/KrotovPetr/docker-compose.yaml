@@ -1,18 +1,45 @@
+x-app-base: &app-base
+  build: .
+  image: highload-task-01-api:local
+  healthcheck:
+    test:
+      - CMD
+      - node
+      - -e
+      - "require('node:http').get('http://127.0.0.1:8080/health', response => process.exit(response.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
+    interval: 5s
+    timeout: 3s
+    retries: 5
+
 services:
   app:
-    build: .
+    <<: *app-base
     environment:
       PORT: "8080"
       POD_ID: ${POD_ID:-pod-1}
       DATACENTER: ${DATACENTER:-dc-a}
     ports:
       - "${PORT:-8080}:8080"
-    healthcheck:
-      test:
-        - CMD
-        - node
-        - -e
-        - "require('node:http').get('http://127.0.0.1:8080/health', response => process.exit(response.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
-      interval: 5s
-      timeout: 3s
-      retries: 5
+  app-b:
+    <<: *app-base
+    environment:
+      PORT: "8080"
+      POD_ID: ${POD_ID_2:-pod-2}
+      DATACENTER: ${DATACENTER_2:-dc-b}
+    ports:
+      - "${PORT_2:-8081}:8080"
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    depends_on:
+      app:
+        condition: service_healthy
+      app-b:
+        condition: service_healthy
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+
+volumes:
+  prometheus-data:

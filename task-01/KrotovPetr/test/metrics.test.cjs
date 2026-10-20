@@ -15,6 +15,16 @@ test("records templated routes, response codes, and instance labels", async (con
   const health = await fetch(`${base}/health`);
   assert.equal(health.status, 200);
 
+  const handlers = await fetch(`${base}/handlers`);
+  assert.equal(handlers.status, 200);
+  assert.deepEqual(await handlers.json(), {
+    handlers: [
+      { method: "POST", path: "/items" },
+      { method: "GET", path: "/items/{id}" },
+      { method: "PUT", path: "/items/{id}" },
+    ],
+  });
+
   const created = await fetch(`${base}/items`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -69,6 +79,14 @@ test("records templated routes, response codes, and instance labels", async (con
       ["method", "POST"],
       ["route", "/items"],
       ["status_code", "201"],
+      ...instance,
+    ], 1),
+  );
+  assert.ok(
+    hasMetric("http_requests_total", [
+      ["method", "GET"],
+      ["route", "/handlers"],
+      ["status_code", "200"],
       ...instance,
     ], 1),
   );

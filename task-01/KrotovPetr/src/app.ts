@@ -1,10 +1,24 @@
-import express, { type NextFunction, type Request, type Response } from "express";
+import express, {
+  type NextFunction,
+  type Request,
+  type RequestHandler,
+  type Response,
+} from "express";
 import { createRequestMetrics, type InstanceIdentity } from "./metrics";
 
 type Item = {
   id: number;
   name: string;
 };
+
+type HandlerDescription = {
+  method: "GET" | "POST" | "PUT";
+  path: string;
+};
+
+function toTemplatePath(path: string): string {
+  return path.replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, "{$1}");
+}
 
 function parseItemId(raw: string | string[] | undefined): number | null {
   if (typeof raw !== "string" || !/^[1-9]\d*$/.test(raw)) {
@@ -29,7 +43,27 @@ export function createApp(identity: InstanceIdentity) {
   const items = new Map<number, Item>();
   const metrics = createRequestMetrics(identity);
   const parseJson = express.json();
+  const handlers: HandlerDescription[] = [];
   let nextId = 1;
+
+  function registerHandler(
+    method: HandlerDescription["method"],
+    path: string,
+    ...callbacks: RequestHandler[]
+  ) {
+    switch (method) {
+      case "GET":
+        app.get(path, ...callbacks);
+        break;
+      case "POST":
+        app.post(path, ...callbacks);
+        break;
+      case "PUT":
+        app.put(path, ...callbacks);
+        break;
+    }
+    handlers.push({ method, path: toTemplatePath(path) });
+  }
 
   app.disable("x-powered-by");
   app.use((request, response, next) => {
@@ -45,7 +79,7 @@ export function createApp(identity: InstanceIdentity) {
         return;
       }
 
-      const route = matchedPath.replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, "{$1}");
+      const route = toTemplatePath(matchedPath);
       const method = request.method;
       metrics.requests.inc({ method, route, status_code: String(response.statusCode) });
       metrics.duration.observe(
@@ -66,7 +100,11 @@ export function createApp(identity: InstanceIdentity) {
     response.send(await metrics.registry.metrics());
   });
 
-  app.post("/items", parseJson, (request, response) => {
+  app.get("/handlers", (_request, response) => {
+    response.json({ handlers });
+  });
+
+  registerHandler("POST", "/items", parseJson, (request, response) => {
     const name = parseItemName(request.body);
     if (name === null) {
       response.status(400).json({ error: "name must be a non-empty string" });
@@ -78,7 +116,7 @@ export function createApp(identity: InstanceIdentity) {
     response.location(`/items/${item.id}`).status(201).json(item);
   });
 
-  app.get("/items/:id", (request, response) => {
+  registerHandler("GET", "/items/:id", (request, response) => {
     const id = parseItemId(request.params.id);
     if (id === null) {
       response.status(400).json({ error: "id must be a positive integer" });
@@ -94,7 +132,7 @@ export function createApp(identity: InstanceIdentity) {
     response.json(item);
   });
 
-  app.put("/items/:id", parseJson, (request, response) => {
+  registerHandler("PUT", "/items/:id", parseJson, (request, response) => {
     const id = parseItemId(request.params.id);
     if (id === null) {
       response.status(400).json({ error: "id must be a positive integer" });
