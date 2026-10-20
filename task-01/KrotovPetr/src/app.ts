@@ -38,7 +38,7 @@ function parseItemName(body: unknown): string | null {
   return typeof name === "string" && name.trim().length > 0 ? name.trim() : null;
 }
 
-export function createApp(identity: InstanceIdentity) {
+export function createApp(identity: InstanceIdentity, demoFailures = false) {
   const app = express();
   const items = new Map<number, Item>();
   const metrics = createRequestMetrics(identity);
@@ -46,20 +46,30 @@ export function createApp(identity: InstanceIdentity) {
   const handlers: HandlerDescription[] = [];
   let nextId = 1;
 
+  const simulateFailure: RequestHandler = (request, response, next) => {
+    if (request.headers["x-demo-failure"] === "1") {
+      response.status(500).json({ error: "simulated failure" });
+      return;
+    }
+    next();
+  };
+
   function registerHandler(
     method: HandlerDescription["method"],
     path: string,
     ...callbacks: RequestHandler[]
   ) {
+    const routeCallbacks = demoFailures ? [simulateFailure, ...callbacks] : callbacks;
+
     switch (method) {
       case "GET":
-        app.get(path, ...callbacks);
+        app.get(path, ...routeCallbacks);
         break;
       case "POST":
-        app.post(path, ...callbacks);
+        app.post(path, ...routeCallbacks);
         break;
       case "PUT":
-        app.put(path, ...callbacks);
+        app.put(path, ...routeCallbacks);
         break;
     }
     handlers.push({ method, path: toTemplatePath(path) });

@@ -18,6 +18,7 @@ services:
       PORT: "8080"
       POD_ID: ${POD_ID:-pod-1}
       DATACENTER: ${DATACENTER:-dc-a}
+      DEMO_FAILURES: "1"
     ports:
       - "${PORT:-8080}:8080"
   app-b:
@@ -26,6 +27,7 @@ services:
       PORT: "8080"
       POD_ID: ${POD_ID_2:-pod-2}
       DATACENTER: ${DATACENTER_2:-dc-b}
+      DEMO_FAILURES: "1"
     ports:
       - "${PORT_2:-8081}:8080"
   prometheus:
@@ -84,6 +86,24 @@ services:
       grafana:
         condition: service_healthy
     restart: "no"
+  load-generator:
+    build: .
+    image: highload-task-01-api:local
+    command: ["node", "scripts/load.mjs"]
+    environment:
+      APP_URLS: http://app:8080,http://app-b:8080
+      LOAD_TARGET_RPS: ${LOAD_TARGET_RPS:-30}
+      LOAD_RAMP_SECONDS: ${LOAD_RAMP_SECONDS:-120}
+      LOAD_404_RATE: ${LOAD_404_RATE:-0.03}
+      LOAD_500_RATE: ${LOAD_500_RATE:-0.02}
+    depends_on:
+      app:
+        condition: service_healthy
+      app-b:
+        condition: service_healthy
+      dashboard-generator:
+        condition: service_completed_successfully
+    restart: "unless-stopped"
 
 volumes:
   prometheus-data:

@@ -1,6 +1,6 @@
 # Task 1: Items API
 
-This directory contains the in-memory microservice, two application instances, Prometheus scraping, and a generated Grafana dashboard for Task 1. Background load is not implemented yet.
+This directory contains the in-memory microservice, two application instances, Prometheus scraping, a generated Grafana dashboard, and a background load generator for Task 1.
 
 ## Run
 
@@ -46,3 +46,9 @@ Prometheus scrapes `app:8080/metrics` and `app-b:8080/metrics` every five second
 The Prometheus data source is provisioned with the fixed UID `prometheus-main`. After the application and Grafana health checks pass, `dashboard-generator` reads `/handlers` and creates or updates the dashboard with UID `items-api-handlers`. It also makes this dashboard the Grafana organization home page. The dashboard is marked non-editable and has one row of latency, RPS, and errors-by-code panels per working route. Its Datacenter and Pod selectors allow multiple values or All.
 
 The generator obtains the route list at runtime. Adding a route through `registerHandler` and restarting the stack adds its panels without changing the generator. The dashboard uses `sum(rate(...))` for RPS and sums histogram bucket rates by `le` before calculating p50, p95, and p99. Errors show the rolling five-minute count for each 4xx or 5xx code. The generator authenticates to Grafana using the admin credentials passed as environment variables.
+
+## Background load
+
+After `dashboard-generator` exits successfully, `load-generator` starts automatically. It creates one item in each application instance, then sends POST, GET, and PUT requests to both instances. The rate rises linearly over two minutes to 30 requests per second in total and stays there until the stack stops. Change `LOAD_TARGET_RPS` and `LOAD_RAMP_SECONDS` in `.env` to adjust it.
+
+About 3% of requests ask for a missing item and return 404. Another 2% send `X-Demo-Failure: 1` and return 500. This header only triggers a simulated error on the three working routes when `DEMO_FAILURES=1`, which Compose sets for the demo; `/health` and `/metrics` are unaffected. The 404 and 500 proportions can be changed with `LOAD_404_RATE` and `LOAD_500_RATE`. View response counts with `docker compose logs -f load-generator`.

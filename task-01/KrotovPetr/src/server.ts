@@ -11,6 +11,10 @@ if (!podId || !datacenter) {
   throw new Error("POD_ID and DATACENTER must be set");
 }
 
-createApp({ podId, datacenter }).listen(port, "0.0.0.0", () => {
-  console.log(`Items API is listening on port ${port}`);
-});
+createApp({ podId, datacenter }, process.env.DEMO_FAILURES === "1").listen(
+  port,
+  "0.0.0.0",
+  () => {
+    console.log(`Items API is listening on port ${port}`);
+  },
+);

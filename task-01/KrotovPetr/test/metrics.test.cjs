@@ -4,7 +4,7 @@ const test = require("node:test");
 const { createApp } = require("../dist/app.js");
 
 test("records templated routes, response codes, and instance labels", async (context) => {
-  const server = createApp({ podId: "pod-test", datacenter: "dc-test" }).listen(
+  const server = createApp({ podId: "pod-test", datacenter: "dc-test" }, true).listen(
     0,
     "127.0.0.1",
   );
@@ -42,6 +42,12 @@ test("records templated routes, response codes, and instance labels", async (con
 
   assert.equal((await fetch(`${base}/items/${id}`)).status, 200);
   assert.equal((await fetch(`${base}/items/999`)).status, 404);
+  assert.equal(
+    (await fetch(`${base}/items/${id}`, {
+      headers: { "x-demo-failure": "1" },
+    })).status,
+    500,
+  );
   assert.equal(
     (
       await fetch(`${base}/items/${id}`, {
@@ -100,6 +106,14 @@ test("records templated routes, response codes, and instance labels", async (con
   );
   assert.ok(
     hasMetric("http_requests_total", [
+      ["method", "GET"],
+      ["route", "/items/{id}"],
+      ["status_code", "500"],
+      ...instance,
+    ], 1),
+  );
+  assert.ok(
+    hasMetric("http_requests_total", [
       ["method", "POST"],
       ["route", "/items"],
       ["status_code", "400"],
@@ -111,7 +125,7 @@ test("records templated routes, response codes, and instance labels", async (con
       ["method", "GET"],
       ["route", "/items/{id}"],
       ...instance,
-    ], 2),
+    ], 3),
   );
   assert.ok(!metrics.includes("/items/999"));
   assert.ok(!metrics.includes('route="/health"'));
